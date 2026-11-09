@@ -17,6 +17,7 @@ button{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(
 button.p{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:700}
 button.ok{background:var(--ok);border-color:var(--ok);color:#06210f;font-weight:700}
 button.bad{border-color:var(--bad);color:var(--bad)}
+button:disabled{opacity:.4;cursor:not-allowed}
 button.big{width:100%;padding:16px;font-size:18px}
 .row{display:flex;gap:8px;align-items:center}.row>*{flex:1}
 .sp{justify-content:space-between}
@@ -59,7 +60,14 @@ const PH=[
  {n:'Phase 2: Upper-Body Volume',len:'~3 months',ex:['squat','bench','dead','ohp','row','curl']},
  {n:'Phase 3: Full-Body Development',len:'~3 months',ex:['squat','bench','dead','ohp','row','dips','pull','calf']}
 ];
-const DAYS=['Squat day (Mon)','Bench day (Wed)','Deadlift day (Fri)'];
+const DAYS=['Squat day','Bench day','Deadlift day'];
+const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+// Planned training weekdays (0=Sun). Only affects planned/future workouts, never history.
+const planDays=()=>(S.days&&S.days.length==3?S.days:[1,3,5]);
+const planTxt=()=>[...planDays()].sort((a,b)=>(a+6)%7-(b+6)%7).map(d=>WD[d]).join('/');
+function toggleDay(d){let a=[...planDays()];
+ if(a.includes(d)){return}          // keep exactly 3: pick another day to swap it out
+ a.shift();a.push(d);S.days=a;save();render()}
 const KEY='regpark5x5.v1';
 let S=load();
 function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s)return s}catch(e){}
@@ -76,7 +84,7 @@ const DEF={squat:40,bench:30,dead:50,ohp:20,row:30,curl:15,dips:0,pull:20,calf:4
 const wt=k=>(S.weights[k]===''||S.weights[k]==null)?(S.unit==='kg'?DEF[k]:DEF[k]*2):S.weights[k];
 
 function render(){
- if(view==='home')home();else if(view==='setup')setup();else if(view==='work')work();else if(view==='done')done();
+ if(view==='home')home();else if(view==='preview')preview();else if(view==='setup')setup();else if(view==='work')work();else if(view==='done')done();
 }
 function home(){
  const p=PH[S.phase],n=S.history.length,day=DAYS[n%3];
@@ -86,14 +94,15 @@ function home(){
  if(S.sess){const c=Object.values(S.sess.res).flat().filter(Boolean).length,t=Object.values(S.sess.res).flat().length;
   h+=`<div class="bar"><i style="width:${c/t*100}%"></i></div><div class="mu">${c}/${t} sets · exercise ${S.sess.i+1} of ${S.sess.ex.length}</div>
   <div class="row" style="margin-top:12px"><button class="p" onclick="resume()">Resume</button><button class="bad" onclick="if(confirm('Discard this workout?')){S.sess=null;save();render()}">Discard</button></div>`;
- }else h+=`<button class="p big" onclick="start()">Start workout</button>`;
+ }else if(canStart())h+=`<button class="p big" onclick="start()">Start workout</button>`;
+ else{const r=restInfo();h+=`<button class="p big" disabled>Start workout</button><div class="note">Rest day needed. You trained ${r.since==0?'today':'yesterday'}, so your next workout opens ${r.avail}. Tap a scheduled day on the calendar to preview it.</div>`}
  h+=`</div><div class="row"><button onclick="view='setup';render()">Phase &amp; units</button></div>`;
  h+=calendar();
  h+=`<div class="card"><h2>History (${n} workouts)</h2>`;
  if(S.sess){const q=S.sess;
   h+=`<div class="hist"><b>${new Date(q.t0).toLocaleDateString()}</b> · ${PH[q.phase].n} <span class="pill" style="color:var(--ac);border-color:var(--ac)">In progress</span><div class="mu">${q.ex.map(k=>{const r=q.res[k],d=r.filter(Boolean).length;return `${EX[k].n} ${fmt(wt(k))}${S.unit} ${r.filter(x=>x=='ok').length}/${r.length}${d?'':' (not started)'}`}).join(' · ')}</div></div>`}
  h+=n?S.history.slice(-8).reverse().map(x=>`<div class="hist"><b>${x.date}</b> · ${x.phase}<div class="mu">${x.lines}</div></div>`).join(''):(S.sess?'':'<div class="mu">Nothing yet.</div>');
- h+=`</div><div class="card mu" style="font-size:13px"><b>Rules:</b> Complete all reps on every set → add ${S.unit==='kg'?'2.5 kg to upper / 5 kg to lower':'5 lb to upper / 10 lb to lower'} next time. Missed reps → repeat the weight (up to 3 attempts, then drop 10%). Move to the next phase once you stall on the current one. Train Mon/Wed/Fri with a rest day between; optional Zone 2 cardio on Tuesday.</div>`;
+ h+=`</div><div class="card mu" style="font-size:13px"><b>Rules:</b> Complete all reps on every set → add ${S.unit==='kg'?'2.5 kg to upper / 5 kg to lower':'5 lb to upper / 10 lb to lower'} next time. Missed reps → repeat the weight (up to 3 attempts, then drop 10%). Move to the next phase once you stall on the current one. Train ${planTxt()} with a rest day between; optional Zone 2 cardio on Tuesday.</div>`;
  app.innerHTML=h;
 }
 const pad=n=>String(n).padStart(2,'0');
@@ -106,9 +115,9 @@ function calendar(){
  const y=calM.getFullYear(),m=calM.getMonth(),days=new Date(y,m+1,0).getDate(),off=(calM.getDay()+6)%7,today=isoOf(new Date());
  const ipK=S.sess?isoOf(new Date(S.sess.t0)):null;
  // Projected workouts: upcoming Mon/Wed/Fri, cycling squat → bench → deadlift focus from your next workout.
- const sched={};{let idx=(S.history.length+(S.sess?1:0))%3;const b0=new Date();b0.setHours(0,0,0,0);
-  for(let i=0;i<180;i++){const d=new Date(b0);d.setDate(b0.getDate()+i);const wd=d.getDay();if(wd!=1&&wd!=3&&wd!=5)continue;
-   const kk=isoOf(d);if(by[kk]||kk===ipK)continue;sched[kk]=DAYS[idx%3].split(' (')[0];idx++}}
+ const sched={};SCHEDN={};{let idx=S.history.length+(S.sess?1:0);const b0=new Date();b0.setHours(0,0,0,0);
+  for(let i=0;i<180;i++){const d=new Date(b0);d.setDate(b0.getDate()+i);const wd=d.getDay();if(!planDays().includes(wd))continue;
+   const kk=isoOf(d);if(by[kk]||kk===ipK)continue;sched[kk]=DAYS[idx%3];SCHEDN[kk]=idx;idx++}}
  let cnt=0;for(let d=1;d<=days;d++)if(by[y+'-'+pad(m+1)+'-'+pad(d)])cnt++;
  const ipHere=ipK&&ipK.startsWith(y+'-'+pad(m+1));
  let h=`<div class="card"><div class="row sp" style="flex:none;margin-bottom:8px"><button style="flex:none;padding:6px 14px" onclick="calMove(-1)" aria-label="Previous month">‹</button><div style="text-align:center;flex:2"><b>${calM.toLocaleString(undefined,{month:'long',year:'numeric'})}</b><div class="mu" style="font-size:13px">${cnt} workout day${cnt==1?'':'s'}${ipHere?' · 1 in progress':''}</div></div><button style="flex:none;padding:6px 14px" onclick="calMove(1)" aria-label="Next month">›</button></div>
@@ -117,9 +126,9 @@ function calendar(){
  for(let d=1;d<=days;d++){const k=y+'-'+pad(m+1)+'-'+pad(d),w=by[k],sel=calSel===k;
   h+=`<div onclick="calSel=calSel==='${k}'?null:'${k}';render()" style="cursor:pointer;aspect-ratio:1;display:grid;place-items:center;border-radius:50%;font-size:14px;${w?'background:var(--ac);color:#fff;font-weight:700;':k===ipK?'background:rgba(255,106,43,.25);color:var(--ac);font-weight:700;':sched[k]?'color:var(--ac);':''}${k===ipK&&!w?'border:2px dashed var(--ac);'+(k===today?'box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--tx);':''):sched[k]&&!w?'border:2px dotted var(--ac);'+(k===today?'box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--tx);':''):k===today?'border:2px solid var(--tx);':'border:2px solid transparent;'}${sel?'outline:2px solid var(--ac);outline-offset:2px;':''}">${d}</div>`}
  h+='</div>';
- h+=`<div class="mu" style="font-size:12px;margin-top:8px">Solid = done${S.sess?' · Dashed = in progress':''} · Dotted = scheduled (Mon/Wed/Fri)</div>`;
+ h+=`<div class="mu" style="font-size:12px;margin-top:8px">Solid = done${S.sess?' · Dashed = in progress':''} · Dotted = scheduled (${planTxt()})</div>`;
  if(calSel){const w=by[calSel],ip=calSel===ipK?S.sess:null;
-  const sc=sched[calSel]&&!w&&!ip?`<div class="mu"><b style="color:var(--ac)">Scheduled</b> · ${sched[calSel]}<br>${PH[S.phase].ex.map(k=>EX[k].n).join(' · ')}</div>`:'';
+  const sc=sched[calSel]&&!w&&!ip?`<div class="mu"><b style="color:var(--ac)">Scheduled</b> · ${sched[calSel]}<br>${orderFor(S.phase,SCHEDN[calSel]).map((k,i)=>(i+1)+'. '+EX[k].n).join('<br>')}<button style="width:100%;margin-top:10px" onclick="openPreview('${calSel}')">Preview workout</button></div>`:'';
   const ipTxt=ip?`<div class="mu"><b style="color:var(--ac)">In progress</b> · ${PH[ip.phase].n}<br>${ip.ex.map(k=>{const r=ip.res[k],d=r.filter(Boolean).length;return `${EX[k].n} ${d}/${r.length} sets${d&&d<r.length?' (incomplete)':d?'':' (not started)'}`}).join('<br>')}</div>`:'';
   h+=`<div class="hist" style="margin-top:10px"><b>${calSel}</b>${ipTxt}${sc}${w?w.map(x=>`<div class="mu">${x.phase}<br>${x.lines}</div>`).join(''):ip||sc?'':'<div class="mu">Rest day</div>'}</div>`}
  return h+'</div>';
@@ -127,6 +136,8 @@ function calendar(){
 function setup(){
  let h=`<h1>Phase &amp; units</h1><div class="card"><label>Phase</label><select onchange="S.phase=+this.value;save();render()">${PH.map((x,i)=>`<option value="${i}" ${i==S.phase?'selected':''}>${x.n}</option>`).join('')}</select>
  <label>Unit</label><select onchange="S.unit=this.value;save();render()"><option ${S.unit=='kg'?'selected':''}>kg</option><option ${S.unit=='lb'?'selected':''}>lb</option></select></div>
+ <div class="card"><h2>Workout days</h2><div class="mu" style="margin-bottom:8px">Pick your 3 training days. Tapping a new day swaps out the oldest pick. This only changes the planned days on the calendar; past workouts stay as logged.</div>
+ <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${[1,2,3,4,5,6,0].map(d=>{const on=planDays().includes(d);return `<button onclick="toggleDay(${d})" aria-pressed="${on}" style="padding:10px 0;${on?'background:var(--ac);border-color:var(--ac);color:#fff;font-weight:700':''}">${WD[d]}</button>`}).join('')}</div></div>
  <div class="card mu" style="font-size:14px">Working weights are automatic: each lift continues from your last workout and adds weight after a clean 5×5. To change a weight for the current workout, tap the weight at the top of the exercise.</div>
  <button class="p big" onclick="save();view='home';render()">Done</button>`;
  app.innerHTML=h;
@@ -136,7 +147,36 @@ function setup(){
 const MAIN=['squat','bench','dead'];
 function orderFor(phase,n){const r=n%3,main=MAIN.slice(r).concat(MAIN.slice(0,r));
  return main.concat(PH[phase].ex.filter(k=>!MAIN.includes(k)))}
+// Rest rule: at least one full rest day between sessions. Blocks Start if your last workout was today or yesterday.
+function restInfo(){
+ let last=null;
+ S.history.forEach(x=>{let k=x.iso;if(!k){const d=new Date(x.date);if(isNaN(d))return;k=isoOf(d)}if(!last||k>last)last=k});
+ if(!last)return {ok:true};
+ const [y,m,d]=last.split('-').map(Number),ld=new Date(y,m-1,d),t=new Date();t.setHours(0,0,0,0);
+ const since=Math.round((t-ld)/864e5),av=new Date(y,m-1,d+2);
+ return {ok:since>=2,since,avail:av.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'})}}
+const canStart=()=>restInfo().ok;
+// Read-only preview of a scheduled workout (current weights; they may change after your next workout).
+let previewN=0,previewDate='';
+function openPreview(k){previewN=SCHEDN[k];previewDate=k;view='preview';render();window.scrollTo(0,0)}
+function preview(){
+ const ex=orderFor(S.phase,previewN),bar=PLATES[S.unit].bar;
+ let h=`<div class="row sp" style="flex:none"><button onclick="view='home';render()" style="flex:none">‹ Home</button><span class="mu" style="text-align:right">Preview · read-only</span></div>
+ <h1 style="margin-top:12px">${DAYS[previewN%3]}</h1><div class="mu">${previewDate} · ${PH[S.phase].n}</div>`;
+ ex.forEach((k,i)=>{const e=EX[k],w=+wt(k);
+  h+=`<div class="card"><div class="mu" style="text-align:center">Exercise ${i+1} of ${ex.length}</div><h1 style="text-align:center">${e.n}</h1>
+  <div class="w">${fmt(w)}<small> ${S.unit}</small></div>${plateView(k,w,true)}
+  <div class="mu" style="text-align:center;margin:12px 0">${e.s} × ${e.r}${e.tempo?' · tempo '+e.tempo:''} · rest ${e.rest>=150&&e.rest<180?'2–3 min':e.rest>=120?e.rest/60+' min':e.rest+' s'}${e.cue?'<br>'+e.cue:''}</div>`;
+  if(e.wu){const w5=Math.max(bar,round(w*.5)),w7=Math.max(bar,round(w*.7));
+   h+=`<div class="note"><b>Warm-up (not counted)</b><br>Set 1 · 5 × ${fmt(w5)} ${S.unit} (50%)${plateView(k,w5,true)}Set 2 · 5 × ${fmt(w7)} ${S.unit} (70%)${plateView(k,w7,true)}</div>`}
+  h+=`</div>`});
+ h+=`<div class="mu" style="text-align:center">Weights are your current working weights and may change after your next workout.</div>
+ <button class="big" style="margin-top:12px" onclick="view='home';render()">Back</button>`;
+ app.innerHTML=h;
+}
+let SCHEDN={};
 function start(){
+ if(!canStart())return;
  const p=PH[S.phase];
  const ex=orderFor(S.phase,S.history.length);
  S.sess={ex,i:0,res:Object.fromEntries(ex.map(k=>[k,Array(EX[k].s).fill(null)])),t0:Date.now(),phase:S.phase};

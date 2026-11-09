@@ -63,11 +63,14 @@ const PH=[
 const DAYS=['Squat day','Bench day','Deadlift day'];
 const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 // Planned training weekdays (0=Sun). Only affects planned/future workouts, never history.
-const planDays=()=>(S.days&&S.days.length==3?S.days:[1,3,5]);
-const planTxt=()=>[...planDays()].sort((a,b)=>(a+6)%7-(b+6)%7).map(d=>WD[d]).join('/');
-function toggleDay(d){let a=[...planDays()];
- if(a.includes(d)){return}          // keep exactly 3: pick another day to swap it out
- a.shift();a.push(d);S.days=a;save();render()}
+// You choose only the first day; the other two follow with a rest day between each (first, +2, +4 days).
+function startDay(){
+ if(Number.isInteger(S.startDay))return S.startDay;
+ if(S.days&&S.days.length==3){const f=S.days.find(d=>S.days.includes((d+2)%7)&&S.days.includes((d+4)%7));if(f!=null)return f}  // migrate older saved picks
+ return 1}
+const planDays=()=>{const s=startDay();return [s,(s+2)%7,(s+4)%7]};
+const planTxt=()=>planDays().map(d=>WD[d]).join('/');
+function setStartDay(d){S.startDay=d;save();render()}
 const KEY='regpark5x5.v1';
 let S=load();
 function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s)return s}catch(e){}
@@ -136,8 +139,9 @@ function calendar(){
 function setup(){
  let h=`<h1>Phase &amp; units</h1><div class="card"><label>Phase</label><select onchange="S.phase=+this.value;save();render()">${PH.map((x,i)=>`<option value="${i}" ${i==S.phase?'selected':''}>${x.n}</option>`).join('')}</select>
  <label>Unit</label><select onchange="S.unit=this.value;save();render()"><option ${S.unit=='kg'?'selected':''}>kg</option><option ${S.unit=='lb'?'selected':''}>lb</option></select></div>
- <div class="card"><h2>Workout days</h2><div class="mu" style="margin-bottom:8px">Pick your 3 training days. Tapping a new day swaps out the oldest pick. This only changes the planned days on the calendar; past workouts stay as logged.</div>
- <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${[1,2,3,4,5,6,0].map(d=>{const on=planDays().includes(d);return `<button onclick="toggleDay(${d})" aria-pressed="${on}" style="padding:10px 0;${on?'background:var(--ac);border-color:var(--ac);color:#fff;font-weight:700':''}">${WD[d]}</button>`}).join('')}</div></div>
+ <div class="card"><h2>First workout day</h2><div class="mu" style="margin-bottom:8px">Pick the day your week starts. The other two workouts are set automatically with a rest day between each. This only changes planned days on the calendar; past workouts stay as logged.</div>
+ <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${[1,2,3,4,5,6,0].map(d=>{const on=startDay()===d;return `<button onclick="setStartDay(${d})" aria-pressed="${on}" style="padding:10px 0;${on?'background:var(--ac);border-color:var(--ac);color:#fff;font-weight:700':''}">${WD[d]}</button>`}).join('')}</div>
+ <div style="margin-top:10px;text-align:center"><span class="mu">Your days:</span> <b>${planTxt()}</b></div></div>
  <div class="card mu" style="font-size:14px">Working weights are automatic: each lift continues from your last workout and adds weight after a clean 5×5. To change a weight for the current workout, tap the weight at the top of the exercise.</div>
  <button class="p big" onclick="save();view='home';render()">Done</button>`;
  app.innerHTML=h;

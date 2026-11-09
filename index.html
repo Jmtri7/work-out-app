@@ -82,7 +82,7 @@ function home(){
  const p=PH[S.phase],n=S.history.length,day=DAYS[n%3];
  let h=`<h1>Reg Park 5×5</h1><div class="mu">${p.n} · ${p.len}</div>`;
  h+=`<div class="card"><h2>${S.sess?'Workout in progress':'Next workout'}</h2><div style="font-size:20px;font-weight:700">${day}</div>
- <div class="mu" style="margin:4px 0 12px">${p.ex.map(k=>EX[k].n).join(' · ')}</div>`;
+ <div class="mu" style="margin:4px 0 12px">${(S.sess?S.sess.ex:orderFor(S.phase,n)).map(k=>EX[k].n).join(' · ')}</div>`;
  if(S.sess){const c=Object.values(S.sess.res).flat().filter(Boolean).length,t=Object.values(S.sess.res).flat().length;
   h+=`<div class="bar"><i style="width:${c/t*100}%"></i></div><div class="mu">${c}/${t} sets · exercise ${S.sess.i+1} of ${S.sess.ex.length}</div>
   <div class="row" style="margin-top:12px"><button class="p" onclick="resume()">Resume</button><button class="bad" onclick="if(confirm('Discard this workout?')){S.sess=null;save();render()}">Discard</button></div>`;
@@ -131,9 +131,15 @@ function setup(){
  <button class="p big" onclick="save();view='home';render()">Done</button>`;
  app.innerHTML=h;
 }
+// The three main lifts rotate so each day's priority lift goes first (squat → bench → deadlift days).
+// The lift that led last time moves to the end of the trio. Accessory lifts follow in program order.
+const MAIN=['squat','bench','dead'];
+function orderFor(phase,n){const r=n%3,main=MAIN.slice(r).concat(MAIN.slice(0,r));
+ return main.concat(PH[phase].ex.filter(k=>!MAIN.includes(k)))}
 function start(){
  const p=PH[S.phase];
- S.sess={ex:p.ex,i:0,res:Object.fromEntries(p.ex.map(k=>[k,Array(EX[k].s).fill(null)])),t0:Date.now(),phase:S.phase};
+ const ex=orderFor(S.phase,S.history.length);
+ S.sess={ex,i:0,res:Object.fromEntries(ex.map(k=>[k,Array(EX[k].s).fill(null)])),t0:Date.now(),phase:S.phase};
  save();resume();
 }
 function resume(){view='work';render()}

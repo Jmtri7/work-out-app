@@ -91,6 +91,7 @@ Light Zone 2 cardio on rest days (about 60–70% of max heart rate) is fine. Avo
 
 The app in `index.html` follows the tables and rules above, with these choices of its own:
 
+- The priority lift goes first each day. The three main lifts rotate: squat day is squat → bench → deadlift, bench day is bench → deadlift → squat, deadlift day is deadlift → squat → bench. The lift that led last time goes last this time. The article only says which lift to prioritize; this ordering is the app's own choice. Accessory lifts (Phases 2–3) follow in table order. The rotation follows your workout count, not the weekday.
 - Rest for the 2–3 min exercises (overhead press, row) is set to 2:30.
 - Warm-ups (50% and 70% × 5) are shown for squat, bench and deadlift only, rounded to the nearest loadable weight and never below the bar.
 - Weights increase after a clean set of all reps: +5 lb / +10 lb (2.5 kg / 5 kg) for upper / lower body. Squat, deadlift and calf raise use the larger step.

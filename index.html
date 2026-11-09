@@ -87,6 +87,7 @@ const DEF={squat:40,bench:30,dead:50,ohp:20,row:30,curl:15,dips:0,pull:20,calf:4
 const wt=k=>(S.weights[k]===''||S.weights[k]==null)?(S.unit==='kg'?DEF[k]:DEF[k]*2):S.weights[k];
 
 function render(){
+ S.ui={v:view,pn:previewN,pd:previewDate};save();   // remember the current page for the next visit
  if(view==='home')home();else if(view==='preview')preview();else if(view==='setup')setup();else if(view==='work')work();else if(view==='done')done();
 }
 function home(){
@@ -322,6 +323,12 @@ function done(){
  <div class="note">Stalled for 3+ sessions? Take a one-week deload at 60% of working weight. Fully stalled on this phase? Consider moving up a phase in Phase &amp; units.</div></div>
  <button class="p big" onclick="view='home';render()">Back home</button>`;
 }
+// Re-open on the page you left (work needs a workout in progress; the finish summary isn't kept, so it falls back to home).
+if(S.ui){const u=S.ui;
+ if(u.v==='setup')view='setup';
+ else if(u.v==='preview'&&Number.isInteger(u.pn)&&u.pd){previewN=u.pn;previewDate=u.pd;view='preview'}
+ else if(u.v==='work'&&S.sess)view='work';
+ else view=S.sess&&u.v==='work'?'work':'home'}
 render();
 </script>
 </body>

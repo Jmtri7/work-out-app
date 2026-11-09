@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reg Park 5x5</title>
+<style>
+:root{--bg:#111316;--card:#1b1f24;--line:#2b3138;--tx:#eceff2;--mu:#8d97a3;--ac:#ff6a2b;--ok:#3ccf7a;--bad:#ef5350}
+@media (prefers-color-scheme:light){:root{--bg:#f3f4f6;--card:#fff;--line:#dde1e6;--tx:#14171a;--mu:#626b76}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,sans-serif}
+main{max-width:520px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0 2px}h2{font-size:15px;margin:0 0 10px;color:var(--mu);text-transform:uppercase;letter-spacing:.06em}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin:12px 0}
+.mu{color:var(--mu);font-size:14px}
+button{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;cursor:pointer}
+button.p{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:700}
+button.ok{background:var(--ok);border-color:var(--ok);color:#06210f;font-weight:700}
+button.bad{border-color:var(--bad);color:var(--bad)}
+button.big{width:100%;padding:16px;font-size:18px}
+.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}
+.sp{justify-content:space-between}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin:8px 0}
+.bar i{display:block;height:100%;background:var(--ac)}
+.w{font-size:56px;font-weight:800;text-align:center;margin:6px 0}
+.w small{font-size:20px;color:var(--mu);font-weight:600}
+.sets{display:flex;gap:8px;justify-content:center;margin:12px 0}
+.dot{width:46px;height:46px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-weight:700}
+.dot{cursor:pointer}.dot.edit{outline:3px solid var(--ac);outline-offset:2px}
+.dot.cur{border-color:var(--ac);color:var(--ac)}.dot.ok{background:var(--ok);border-color:var(--ok);color:#06210f}.dot.miss{background:var(--bad);border-color:var(--bad);color:#fff}
+input,select{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;width:100%}
+label{display:block;font-size:14px;color:var(--mu);margin:8px 0 4px}
+#restbar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:3px solid var(--ac);z-index:5}
+#restbar.go{border-top-color:var(--ok)}
+#restbar .in{max-width:520px;margin:0 auto;padding:10px 16px;text-align:center}
+#rt{font-size:34px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1}
+#restbar .go #rt,#restbar.go #rt{color:var(--ok)}
+.pill{display:inline-block;padding:2px 10px;border-radius:99px;border:1px solid var(--line);font-size:13px;color:var(--mu)}
+.hist{border-top:1px solid var(--line);padding:8px 0;font-size:14px}
+.note{background:rgba(255,106,43,.12);border:1px solid var(--ac);border-radius:10px;padding:10px;font-size:14px;margin-top:10px}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script>
+const EX={
+ squat:{n:'Back Squat',s:5,r:5,rest:180,inc:5,tempo:'2-1-1-0',wu:1,cue:'Rack with safety bars. Brace before each rep.'},
+ bench:{n:'Bench Press',s:5,r:5,rest:180,inc:2.5,tempo:'2-1-1-0',wu:1,cue:'Use a spotter or safeties.'},
+ dead:{n:'Deadlift',s:5,r:5,rest:180,inc:5,tempo:'1-1-1-0',wu:1,cue:'Fast initial pull. Brace hard.'},
+ ohp:{n:'Standing Overhead Press',s:5,r:5,rest:150,inc:2.5,cue:'Rest 2–3 min.'},
+ row:{n:'Barbell Row',s:5,r:5,rest:150,inc:2.5,cue:'Rest 2–3 min.'},
+ curl:{n:'Barbell Curl',s:3,r:5,rest:120,inc:2.5},
+ dips:{n:'Weighted Dips',s:3,r:5,rest:120,inc:2.5},
+ pull:{n:'High Pulls',s:3,r:5,rest:120,inc:2.5},
+ calf:{n:'Standing Calf Raise',s:5,r:10,rest:90,inc:5}
+};
+const PH=[
+ {n:'Phase 1: Foundation',len:'~3 months',ex:['squat','bench','dead']},
+ {n:'Phase 2: Upper-Body Volume',len:'~3 months',ex:['squat','bench','dead','ohp','row','curl']},
+ {n:'Phase 3: Full-Body Development',len:'~3 months',ex:['squat','bench','dead','ohp','row','dips','pull','calf']}
+];
+const DAYS=['Squat day (Mon)','Bench day (Wed)','Deadlift day (Fri)'];
+const KEY='regpark5x5.v1';
+let S=load();
+function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s)return s}catch(e){}
+ return {phase:0,unit:'kg',weights:{},fails:{},history:[],sess:null}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+const $=id=>document.getElementById(id);
+const app=$('app');
+let view=S.sess?'work':'home';
+const fmt=w=>(+w).toString();
+const step=()=>S.unit==='kg'?2.5:5;
+const incOf=k=>S.unit==='kg'?EX[k].inc:EX[k].inc*2;
+const round=w=>Math.round(w/step())*step();
+const DEF={squat:40,bench:30,dead:50,ohp:20,row:30,curl:15,dips:0,pull:20,calf:40};
+const wt=k=>(S.weights[k]===''||S.weights[k]==null)?(S.unit==='kg'?DEF[k]:DEF[k]*2):S.weights[k];
+
+function render(){
+ if(view==='home')home();else if(view==='setup')setup();else if(view==='work')work();else if(view==='done')done();
+}
+function home(){
+ const p=PH[S.phase],n=S.history.length,day=DAYS[n%3];
+ let h=`<h1>Reg Park 5×5</h1><div class="mu">${p.n} · ${p.len}</div>`;
+ h+=`<div class="card"><h2>${S.sess?'Workout in progress':'Next workout'}</h2><div style="font-size:20px;font-weight:700">${day}</div>
+ <div class="mu" style="margin:4px 0 12px">${p.ex.map(k=>EX[k].n).join(' · ')}</div>`;
+ if(S.sess){const c=Object.values(S.sess.res).flat().filter(Boolean).length,t=Object.values(S.sess.res).flat().length;
+  h+=`<div class="bar"><i style="width:${c/t*100}%"></i></div><div class="mu">${c}/${t} sets · exercise ${S.sess.i+1} of ${S.sess.ex.length}</div>
+  <div class="row" style="margin-top:12px"><button class="p" onclick="resume()">Resume</button><button class="bad" onclick="if(confirm('Discard this workout?')){S.sess=null;save();render()}">Discard</button></div>`;
+ }else h+=`<button class="p big" onclick="start()">Start workout</button>`;
+ h+=`</div><div class="row"><button onclick="view='setup';render()">Phase &amp; units</button></div>`;
+ h+=calendar();
+ h+=`<div class="card"><h2>History (${n} workouts)</h2>`;
+ if(S.sess){const q=S.sess;
+  h+=`<div class="hist"><b>${new Date(q.t0).toLocaleDateString()}</b> · ${PH[q.phase].n} <span class="pill" style="color:var(--ac);border-color:var(--ac)">In progress</span><div class="mu">${q.ex.map(k=>{const r=q.res[k],d=r.filter(Boolean).length;return `${EX[k].n} ${fmt(wt(k))}${S.unit} ${r.filter(x=>x=='ok').length}/${r.length}${d?'':' (not started)'}`}).join(' · ')}</div></div>`}
+ h+=n?S.history.slice(-8).reverse().map(x=>`<div class="hist"><b>${x.date}</b> · ${x.phase}<div class="mu">${x.lines}</div></div>`).join(''):(S.sess?'':'<div class="mu">Nothing yet.</div>');
+ h+=`</div><div class="card mu" style="font-size:13px"><b>Rules:</b> Complete all reps on every set → add ${S.unit==='kg'?'2.5 kg to upper / 5 kg to lower':'5 lb to upper / 10 lb to lower'} next time. Missed reps → repeat the weight (up to 3 attempts, then drop 10%). Move to the next phase once you stall on the current one. Train Mon/Wed/Fri with a rest day between; optional Zone 2 cardio on Tuesday.</div>`;
+ app.innerHTML=h;
+}
+const pad=n=>String(n).padStart(2,'0');
+const isoOf=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+let calM=new Date(new Date().getFullYear(),new Date().getMonth(),1),calSel=null;
+function calMove(n){calM=new Date(calM.getFullYear(),calM.getMonth()+n,1);calSel=null;render()}
+function calendar(){
+ const by={};
+ S.history.forEach(x=>{let k=x.iso;if(!k){const d=new Date(x.date);if(isNaN(d))return;k=isoOf(d)}(by[k]=by[k]||[]).push(x)});
+ const y=calM.getFullYear(),m=calM.getMonth(),days=new Date(y,m+1,0).getDate(),off=(calM.getDay()+6)%7,today=isoOf(new Date());
+ const ipK=S.sess?isoOf(new Date(S.sess.t0)):null;
+ // Projected workouts: upcoming Mon/Wed/Fri, cycling squat → bench → deadlift focus from your next workout.
+ const sched={};{let idx=(S.history.length+(S.sess?1:0))%3;const b0=new Date();b0.setHours(0,0,0,0);
+  for(let i=0;i<180;i++){const d=new Date(b0);d.setDate(b0.getDate()+i);const wd=d.getDay();if(wd!=1&&wd!=3&&wd!=5)continue;
+   const kk=isoOf(d);if(by[kk]||kk===ipK)continue;sched[kk]=DAYS[idx%3].split(' (')[0];idx++}}
+ let cnt=0;for(let d=1;d<=days;d++)if(by[y+'-'+pad(m+1)+'-'+pad(d)])cnt++;
+ const ipHere=ipK&&ipK.startsWith(y+'-'+pad(m+1));
+ let h=`<div class="card"><div class="row sp" style="flex:none;margin-bottom:8px"><button style="flex:none;padding:6px 14px" onclick="calMove(-1)" aria-label="Previous month">‹</button><div style="text-align:center;flex:2"><b>${calM.toLocaleString(undefined,{month:'long',year:'numeric'})}</b><div class="mu" style="font-size:13px">${cnt} workout day${cnt==1?'':'s'}${ipHere?' · 1 in progress':''}</div></div><button style="flex:none;padding:6px 14px" onclick="calMove(1)" aria-label="Next month">›</button></div>
+ <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center">${['M','T','W','T','F','S','S'].map(d=>`<div class="mu" style="font-size:12px">${d}</div>`).join('')}`;
+ for(let i=0;i<off;i++)h+='<div></div>';
+ for(let d=1;d<=days;d++){const k=y+'-'+pad(m+1)+'-'+pad(d),w=by[k],sel=calSel===k;
+  h+=`<div onclick="calSel=calSel==='${k}'?null:'${k}';render()" style="cursor:pointer;aspect-ratio:1;display:grid;place-items:center;border-radius:50%;font-size:14px;${w?'background:var(--ac);color:#fff;font-weight:700;':k===ipK?'background:rgba(255,106,43,.25);color:var(--ac);font-weight:700;':sched[k]?'color:var(--ac);':''}${k===ipK&&!w?'border:2px dashed var(--ac);'+(k===today?'box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--tx);':''):sched[k]&&!w?'border:2px dotted var(--ac);'+(k===today?'box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--tx);':''):k===today?'border:2px solid var(--tx);':'border:2px solid transparent;'}${sel?'outline:2px solid var(--ac);outline-offset:2px;':''}">${d}</div>`}
+ h+='</div>';
+ h+=`<div class="mu" style="font-size:12px;margin-top:8px">Solid = done${S.sess?' · Dashed = in progress':''} · Dotted = scheduled (Mon/Wed/Fri)</div>`;
+ if(calSel){const w=by[calSel],ip=calSel===ipK?S.sess:null;
+  const sc=sched[calSel]&&!w&&!ip?`<div class="mu"><b style="color:var(--ac)">Scheduled</b> · ${sched[calSel]}<br>${PH[S.phase].ex.map(k=>EX[k].n).join(' · ')}</div>`:'';
+  const ipTxt=ip?`<div class="mu"><b style="color:var(--ac)">In progress</b> · ${PH[ip.phase].n}<br>${ip.ex.map(k=>{const r=ip.res[k],d=r.filter(Boolean).length;return `${EX[k].n} ${d}/${r.length} sets${d&&d<r.length?' (incomplete)':d?'':' (not started)'}`}).join('<br>')}</div>`:'';
+  h+=`<div class="hist" style="margin-top:10px"><b>${calSel}</b>${ipTxt}${sc}${w?w.map(x=>`<div class="mu">${x.phase}<br>${x.lines}</div>`).join(''):ip||sc?'':'<div class="mu">Rest day</div>'}</div>`}
+ return h+'</div>';
+}
+function setup(){
+ let h=`<h1>Phase &amp; units</h1><div class="card"><label>Phase</label><select onchange="S.phase=+this.value;save();render()">${PH.map((x,i)=>`<option value="${i}" ${i==S.phase?'selected':''}>${x.n}</option>`).join('')}</select>
+ <label>Unit</label><select onchange="S.unit=this.value;save();render()"><option ${S.unit=='kg'?'selected':''}>kg</option><option ${S.unit=='lb'?'selected':''}>lb</option></select></div>
+ <div class="card mu" style="font-size:14px">Working weights are automatic: each lift continues from your last workout and adds weight after a clean 5×5. To change a weight for the current workout, tap the weight at the top of the exercise.</div>
+ <button class="p big" onclick="save();view='home';render()">Done</button>`;
+ app.innerHTML=h;
+}
+function start(){
+ const p=PH[S.phase];
+ S.sess={ex:p.ex,i:0,res:Object.fromEntries(p.ex.map(k=>[k,Array(EX[k].s).fill(null)])),t0:Date.now(),phase:S.phase};
+ save();resume();
+}
+function resume(){view='work';render()}
+function work(){
+ const s=S.sess,k=s.ex[s.i],e=EX[k],r=s.res[k],cur=r.indexOf(null),fin=cur<0;
+ const total=Object.values(s.res).flat().length,c=Object.values(s.res).flat().filter(Boolean).length;
+ let h=`<div class="row sp" style="flex:none"><button onclick="view='home';render()" style="flex:none">‹ Home</button><span class="mu" style="text-align:right">Exercise ${s.i+1}/${s.ex.length}</span></div>
+ <div class="bar"><i style="width:${c/total*100}%"></i></div>
+ <div class="card"><h1 style="text-align:center">${e.n}</h1>${(S.last||{})[k]?`<div class="mu" style="text-align:center;font-size:13px">Last trained: ${PH[S.last[k].phase].n.split(':')[0]} · ${fmt(S.last[k].w)} ${S.unit} · ${S.last[k].sets} sets · ${S.last[k].iso}</div>`:`<div class="mu" style="text-align:center;font-size:13px">Not trained yet</div>`}
+ <div class="w"><input type="number" inputmode="decimal" step="${step()}" value="${wt(k)}" aria-label="Working weight" style="width:170px;font-size:44px;font-weight:800;text-align:center;padding:4px" onchange="S.weights['${k}']=snapW('${k}',+this.value||0);save();render()"><small> ${S.unit}</small></div>
+ <div class="mu" style="text-align:center;margin-top:-4px">Tap the weight to edit</div>${plateView(k)}
+`;
+ h+=`<div class="mu" style="text-align:center;margin:12px 0">${e.s} × ${e.r}${e.tempo?' · tempo '+e.tempo:''} · rest ${e.rest>=150&&e.rest<180?'2–3 min':e.rest>=120?e.rest/60+' min':e.rest+' s'}${e.cue?'<br>'+e.cue:''}</div>`;
+ if(e.wu&&!r.some(Boolean)){const bar=PLATES[S.unit].bar,w5=Math.max(bar,round(wt(k)*.5)),w7=Math.max(bar,round(wt(k)*.7));
+  h+=`<div class="note"><b>Warm-up (not counted)</b><br>Set 1 · 5 × ${fmt(w5)} ${S.unit} (50%)${plateView(k,w5,true)}Set 2 · 5 × ${fmt(w7)} ${S.unit} (70%)${plateView(k,w7,true)}</div>`}
+ h+=`<div class="sets">${r.map((x,i)=>{const m=x&&x!='ok';return `<div class="dot ${x=='ok'?'ok':m?'miss':i==cur?'cur':''} ${editSet===i?'edit':''}" onclick="editSet=editSet===${i}?null:${i};pendingMiss=null;render()" title="${m?'Got '+x.split(':')[1]+' reps — tap to edit':'Tap to edit'}">${x=='ok'?'✓':m?x.split(':')[1]:i+1}</div>`}).join('')}</div>`;
+ if(editSet!==null){const v=r[editSet];
+  h+=`<div class="note" style="margin-top:12px;text-align:center"><b>Editing set ${editSet+1}</b> <span class="mu">(${v==null?'not done yet':v=='ok'?'all reps':v.split(':')[1]+' reps'})</span>
+  <div style="margin:10px 0">${repBtns(e.r,n=>`setRes('${k}',${editSet},${n==e.r?"'ok'":`'miss:${n}'`})`,v)}</div>
+  <div class="row"><button onclick="setRes('${k}',${editSet},null)">Clear set</button><button onclick="editSet=null;render()">Close</button></div></div>`}
+ else if(!fin)h+=`<div class="mu" style="text-align:center;margin:10px 0 8px">Set ${cur+1} of ${e.s}: how many reps did you get?</div>${repBtns(e.r,n=>`mark('${k}',${n==e.r?"'ok'":`'miss:${n}'`})`)}`;
+ else h+=`<button class="p big" style="margin-top:12px" onclick="nextEx()">${s.i==s.ex.length-1?'Finish workout':'Next: '+EX[s.ex[s.i+1]].n+' ›'}</button>`;
+ h+=`</div>`;
+ if(s.i>0)h+=`<button onclick="S.sess.i--;save();stopRest();render()">‹ Previous exercise</button> `;
+ if(!fin&&s.i<s.ex.length-1)h+=`<button onclick="S.sess.i++;save();stopRest();render()">Skip ›</button>`;
+ h+=`<div style="height:90px"></div><div id="restbar"><div class="in"><div><div class="mu" id="rl"></div><div id="rt"></div></div></div></div>`;
+ app.innerHTML=h;
+ updateRest();
+}
+// Typed weights on barbell lifts snap DOWN to the nearest weight the plates can make (bar + pairs of the smallest plate).
+function snapW(k,v){v=Math.max(0,v);const bar=PLATES[S.unit].bar;
+ if(!BARLIFTS.includes(k)||v<bar)return v;
+ return +(bar+Math.floor((v-bar)/step()+1e-9)*step()).toFixed(2)}
+const BARLIFTS=['squat','bench','dead','ohp','row','curl','pull'];
+const PLATES={lb:{bar:45,set:[45,35,25,10,5,2.5]},kg:{bar:20,set:[25,20,15,10,5,2.5,1.25]}};
+const PCOL=['#2f6fd6','#e3b92c','#2fae60','#8a929c','#d9483b','#e9ecef','#b06ad8'];
+const PTXT=['#fff','#222','#fff','#fff','#fff','#222','#fff'];
+function addP(k,d){const cfg=PLATES[S.unit];S.weights[k]=Math.max(cfg.bar,Math.round((Math.max(+wt(k),cfg.bar)+2*d)*100)/100);save();render()}
+function plateView(k,tot,ro){
+ if(!BARLIFTS.includes(k))return '';
+ const cfg=PLATES[S.unit],total=tot??+wt(k),u=S.unit,mx=cfg.set[0];
+ if(total<cfg.bar&&ro)return `<div class="mu">Below the bar weight.</div>`;
+ if(total<cfg.bar)return `<div class="mu" style="text-align:center;margin:10px 0">Less than the ${cfg.bar} ${u} bar.</div><button class="big" onclick="addP('${k}',0)">Set to empty bar</button>`;
+ let rem=Math.round((total-cfg.bar)/2*100)/100;const used=[];
+ cfg.set.forEach(p=>{while(rem>=p-1e-9){used.push(p);rem=Math.round((rem-p)*100)/100}});
+ const off=rem>0?Math.round(rem*2*100)/100:0;
+ const dim=p=>({h:26+84*Math.sqrt(p/mx),w:13+9*(p/mx),i:cfg.set.indexOf(p)});
+ const raw=used.reduce((a,p)=>a+dim(p).w+1.5,0),sc=Math.min(1,140/(raw||1));
+ const plate=(p,x,side)=>{const d=dim(p),w=d.w*sc,c=PCOL[d.i%PCOL.length];
+  return `<g ${ro?'':`style="cursor:pointer" onclick="addP('${k}',${-p})"`}><title>${ro?p+' '+u:'Remove '+p+' '+u+' plate from each side'}</title>
+  <rect x="${x}" y="${70-d.h/2}" width="${w}" height="${d.h}" rx="2" fill="${c}" stroke="#0007"/>
+  <text transform="translate(${x+w/2+3},70) rotate(-90)" text-anchor="middle" font-size="${Math.min(11,w+1)}" font-weight="700" fill="${PTXT[d.i%PTXT.length]}">${p}</text></g>`};
+ let pl='',xr=312,xl=148;
+ used.forEach(p=>{const w=dim(p).w*sc;pl+=plate(p,xr,1);xr+=w+1.5;pl+=plate(p,xl-w,0);xl-=w+1.5});
+ const tray=cfg.set.map((p,i)=>{const s=34+34*Math.sqrt(p/mx);
+  return `<button onclick="addP('${k}',${p})" title="Add a ${p} ${u} plate to each side" style="padding:6px;flex:none;display:grid;place-items:center;gap:2px;min-width:64px"><svg width="${s}" height="${s}" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="${PCOL[i%PCOL.length]}" stroke="#0007" stroke-width="3"/><circle cx="50" cy="50" r="30" fill="none" stroke="#0004" stroke-width="3"/><circle cx="50" cy="50" r="9" fill="#111"/><text x="50" y="30" text-anchor="middle" font-size="20" font-weight="800" fill="${PTXT[i%PTXT.length]}">${p}</text></svg><span class="mu" style="font-size:12px">+${p} ×2</span></button>`}).join('');
+ return `<svg viewBox="0 0 460 140" style="width:100%;height:auto;margin-top:8px" role="img" aria-label="Barbell plate diagram">
+ <rect x="0" y="65" width="460" height="10" fill="#b8c0c9"/><rect x="148" y="52" width="164" height="36" rx="4" fill="none"/>
+ <rect x="142" y="50" width="8" height="40" rx="2" fill="#6b7480"/><rect x="310" y="50" width="8" height="40" rx="2" fill="#6b7480"/>
+ <rect x="170" y="58" width="120" height="24" rx="5" fill="#2b3138" stroke="#9aa3ad"/><text x="230" y="75" text-anchor="middle" font-size="14" font-weight="800" fill="#fff">${cfg.bar} ${u} bar</text>
+ ${pl}</svg>
+ <div style="text-align:center"><div style="font-size:15px">Each side: ${used.length?'<b>'+used.join(' + ')+'</b>':'<b>just the bar</b>'}</div>${ro?'':'<div class="mu" style="font-size:13px">Tap a plate to remove it · tap below to add to both sides</div>'}
+ ${off?`<div class="note">Closest loadable: ${fmt(total-off)} ${u} (${fmt(off)} ${u} off — no plate small enough)</div>`:''}</div>
+ ${ro?'':`<div style="display:flex;gap:6px;overflow-x:auto;margin:10px 0 4px;padding-bottom:4px">${tray}</div>`}`;
+}
+function plateViewOld(k){
+ if(!BARLIFTS.includes(k))return '';
+ const cfg=PLATES[S.unit],total=+wt(k),u=S.unit;
+ if(total<cfg.bar)return `<div class="mu" style="text-align:center;margin:10px 0">Less than the ${cfg.bar} ${u} bar — use a lighter bar.</div>`;
+ let rem=Math.round((total-cfg.bar)/2*100)/100;const used=[];
+ cfg.set.forEach(p=>{while(rem>=p-1e-9){used.push(p);rem=Math.round((rem-p)*100)/100}});
+ const off=rem>0?Math.round(rem*2*100)/100:0;
+ const mx=cfg.set[0];let x=70,pl='';
+ used.forEach(p=>{const i=cfg.set.indexOf(p),h=26+84*Math.sqrt(p/mx),w=6+9*(p/mx);
+  pl+=`<rect x="${x}" y="${60-h/2}" width="${w}" height="${h}" rx="2" fill="${PCOL[i%PCOL.length]}" stroke="#0006"/>`;x+=w+1.5});
+ const cnt={};used.forEach(p=>cnt[p]=(cnt[p]||0)+1);
+ const txt=used.length?Object.keys(cnt).sort((a,b)=>b-a).map(p=>`<b>${cnt[p]} × ${p}</b>`).join(' + '):'Just the bar';
+ return `<svg viewBox="0 0 330 120" style="width:100%;height:auto;margin-top:8px" role="img" aria-label="Barbell plate diagram">
+ <rect x="0" y="56" width="70" height="8" fill="#9aa3ad"/><rect x="62" y="40" width="8" height="40" rx="2" fill="#6b7480"/>
+ <rect x="70" y="55" width="250" height="10" fill="#b8c0c9"/>${pl}
+ <rect x="${x}" y="48" width="8" height="24" rx="2" fill="#6b7480"/></svg>
+ <div style="text-align:center"><div class="mu">${cfg.bar} ${u} bar + each side:</div><div style="font-size:18px">${txt}</div>
+ ${off?`<div class="note">Closest loadable: ${fmt(total-off)} ${u} (${fmt(off)} ${u} off — no plate small enough)</div>`:''}</div>`;
+}
+function mark(k,v){
+ pendingMiss=null;const r=S.sess.res[k];r[r.indexOf(null)]=v;
+ S.sess.last={t:Date.now(),rest:EX[k].rest};save();render();
+}
+function nextEx(){stopRest();if(S.sess.i<S.sess.ex.length-1){S.sess.i++;save();render()}else finish()}
+let pendingMiss=null,editSet=null;
+function repBtns(max,fn,cur){
+ return `<div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center">${Array.from({length:max+1},(_,n)=>{
+  const sel=cur!=null&&(cur=='ok'?max:+cur.split(':')[1])===n,full=n===max;
+  return `<button onclick="${fn(n)}" style="flex:none;width:52px;height:52px;border-radius:50%;padding:0;font-size:20px;font-weight:700;${full?'background:var(--ok);border-color:var(--ok);color:#06210f':'border-color:var(--bad);color:var(--bad)'};${sel?'outline:3px solid var(--ac);outline-offset:2px':''}">${n}</button>`}).join('')}</div>`}
+function setRes(k,i,v){S.sess.res[k][i]=v;editSet=null;save();render()}
+function stopRest(){pendingMiss=null;editSet=null}
+// Rest is derived from S.sess.last = {t: when the last set was logged, rest: seconds}. Editing a set never touches it.
+let prevLeft;
+const mmss=s=>Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+function updateRest(){
+ const rt=$('rt');if(!rt||view!=='work'||!S.sess)return;
+ const l=S.sess.last,bar=$('restbar'),rl=$('rl');
+ if(!l){rl.textContent='Rest timer';rt.textContent='Starts after your first set';rt.style.fontSize='16px';bar.className='';prevLeft=undefined;return}
+ rt.style.fontSize='';
+ const left=Math.ceil((l.t+l.rest*1000-Date.now())/1000);
+ if(left>0){rl.textContent='Rest left';rt.textContent=mmss(left);bar.className=''}
+ else{rl.textContent='Ready · since last set';rt.textContent=mmss(Math.max(0,Math.floor((Date.now()-l.t)/1000)));bar.className='go';
+  if(prevLeft>0)beep()}
+ prevLeft=left;
+}
+setInterval(updateRest,500);
+function beep(){
+ try{navigator.vibrate&&navigator.vibrate([200,100,200]);
+ const a=new(window.AudioContext||window.webkitAudioContext)(),o=a.createOscillator(),g=a.createGain();
+ o.connect(g);g.connect(a.destination);o.frequency.value=880;g.gain.value=.2;o.start();o.stop(a.currentTime+.4)}catch(e){}
+}
+let summary=[];
+function finish(){
+ const s=S.sess;summary=[];const lines=[];
+ s.ex.forEach(k=>{
+  const r=s.res[k],ok=r.every(x=>x=='ok'),w=wt(k);
+  if(!r.some(Boolean)){lines.push(`${EX[k].n} skipped`);summary.push(`${EX[k].n}: skipped → stays ${fmt(w)} ${S.unit}`);return}
+  {S.last=S.last||{};S.last[k]={phase:s.phase,w,iso:isoOf(new Date()),sets:r.filter(x=>x=='ok').length+'/'+r.length}}
+  const reps=r.map(x=>x=='ok'?EX[k].r:x?+x.split(':')[1]:'–').join(',');
+  lines.push(`${EX[k].n} ${fmt(w)}${S.unit} ${r.filter(x=>x=='ok').length}/${r.length}${ok?'':' (reps: '+reps+')'}`);
+  if(ok){S.fails[k]=0;S.weights[k]=+(w+incOf(k)).toFixed(2);summary.push(`${EX[k].n}: all sets done → ${fmt(S.weights[k])} ${S.unit} next time`)}
+  else{S.fails[k]=(S.fails[k]||0)+1;
+   if(S.fails[k]>=3){S.weights[k]=Math.max(0,round(w*.9));S.fails[k]=0;summary.push(`${EX[k].n}: 3 failed attempts → drop 10% to ${fmt(S.weights[k])} ${S.unit} and rebuild`)}
+   else summary.push(`${EX[k].n}: missed reps → repeat ${fmt(w)} ${S.unit} (attempt ${S.fails[k]} of 3)`)}
+ });
+ S.history.push({iso:isoOf(new Date()),date:new Date().toLocaleDateString(),phase:PH[s.phase].n,lines:lines.join(' · ')});
+ S.sess=null;save();view='done';render();
+}
+function done(){
+ app.innerHTML=`<h1>Workout complete 💪</h1><div class="card"><h2>Next time</h2>${summary.map(x=>`<div class="hist">${x}</div>`).join('')}
+ <div class="note">Stalled for 3+ sessions? Take a one-week deload at 60% of working weight. Fully stalled on this phase? Consider moving up a phase in Phase &amp; units.</div></div>
+ <button class="p big" onclick="view='home';render()">Back home</button>`;
+}
+render();
+</script>
+</body>
+</html>

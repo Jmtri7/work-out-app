@@ -297,10 +297,21 @@ function updateRest(){
  prevLeft=left;
 }
 setInterval(updateRest,500);
+// One shared AudioContext, unlocked by your first tap (browsers block sound until then).
+let AC=null;
+function audioCtx(){try{if(!AC)AC=new(window.AudioContext||window.webkitAudioContext)();if(AC.state==='suspended')AC.resume();}catch(e){}return AC}
+['pointerdown','keydown'].forEach(ev=>document.addEventListener(ev,audioCtx,{passive:true}));
+// Bell: a few inharmonic partials with a quick strike and a long exponential ring-out. Plays once.
+function bell(){
+ const a=audioCtx();if(!a)return;const t=a.currentTime,f0=587;
+ const master=a.createGain();master.gain.value=.5;master.connect(a.destination);
+ [[1,1,2.6],[2.76,.6,1.8],[5.4,.35,1.1],[8.93,.2,.6]].forEach(([r,v,d])=>{
+  const o=a.createOscillator(),g=a.createGain();o.type='sine';o.frequency.value=f0*r;
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+.005);g.gain.exponentialRampToValueAtTime(.0001,t+d);
+  o.connect(g);g.connect(master);o.start(t);o.stop(t+d+.05)})}
 function beep(){
- try{navigator.vibrate&&navigator.vibrate([200,100,200]);
- const a=new(window.AudioContext||window.webkitAudioContext)(),o=a.createOscillator(),g=a.createGain();
- o.connect(g);g.connect(a.destination);o.frequency.value=880;g.gain.value=.2;o.start();o.stop(a.currentTime+.4)}catch(e){}
+ try{navigator.vibrate&&navigator.vibrate([200,100,200])}catch(e){}
+ try{bell()}catch(e){}
 }
 let summary=[];
 function finish(){

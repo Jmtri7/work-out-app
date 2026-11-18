@@ -62,15 +62,33 @@ const PH=[
 ];
 const DAYS=['Squat day','Bench day','Deadlift day'];
 const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-// Planned training weekdays (0=Sun). Only affects planned/future workouts, never history.
-// You choose only the first day; the other two follow with a rest day between each (first, +2, +4 days).
-function startDay(){
- if(Number.isInteger(S.startDay))return S.startDay;
- if(S.days&&S.days.length==3){const f=S.days.find(d=>S.days.includes((d+2)%7)&&S.days.includes((d+4)%7));if(f!=null)return f}  // migrate older saved picks
- return 1}
-const planDays=()=>{const s=startDay();return [s,(s+2)%7,(s+4)%7]};
-const planTxt=()=>planDays().map(d=>WD[d]).join('/');
-function setStartDay(d){S.startDay=d;save();render()}
+// You can start any of the 3 workouts on any day. The app only RECOMMENDS the next one in the cycle
+// (the one after your last workout) and when to do it, from how far apart your recent workouts have been
+// (clamped to 2–3 days so there is always a rest day between sessions and about 3 workouts a week).
+const sessDay=s=>Number.isInteger(s.day)?s.day:S.history.length%3;
+const dayOfHist=(x,i)=>Number.isInteger(x.day)?x.day:i%3;
+function nextDay(){const n=S.history.length;return n?(dayOfHist(S.history[n-1],n-1)+1)%3:0}
+const parseIso=k=>{const [y,m,d]=k.split('-').map(Number);return new Date(y,m-1,d)};
+const addDays=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);
+function histDates(){
+ const a=[];S.history.forEach(x=>{let k=x.iso;if(!k){const d=new Date(x.date);if(isNaN(d))return;k=isoOf(d)}a.push(k)});
+ if(S.sess)a.push(isoOf(new Date(S.sess.t0)));
+ return [...new Set(a)].sort()}
+function dayGap(){
+ const ds=histDates().slice(-7),g=[];
+ for(let i=1;i<ds.length;i++){const n=Math.round((parseIso(ds[i])-parseIso(ds[i-1]))/864e5);if(n>=1)g.push(n)}
+ if(!g.length)return 2;
+ g.sort((a,b)=>a-b);const med=g.length%2?g[(g.length-1)/2]:(g[g.length/2-1]+g[g.length/2])/2;
+ return Math.min(3,Math.max(2,Math.round(med)))}
+function recommend(){
+ const gap=dayGap(),ds=histDates(),t=new Date();t.setHours(0,0,0,0);
+ let d=ds.length?addDays(parseIso(ds[ds.length-1]),gap):t;if(d<t)d=t;
+ const list=[];while(list.length<90&&(d-t)/864e5<180){list.push(isoOf(d));d=addDays(d,gap)}
+ return {gap,list,next:list[0]}}
+function recWhen(k){
+ const t=isoOf(new Date());if(k<=t)return 'Recommended: today';
+ if(k===isoOf(addDays(new Date(),1)))return 'Recommended: tomorrow';
+ return 'Recommended: '+parseIso(k).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'})}
 const KEY='regpark5x5.v1';
 let S=load();
 function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s)return s}catch(e){}
@@ -91,22 +109,26 @@ function render(){
  if(view==='home')home();else if(view==='preview')preview();else if(view==='setup')setup();else if(view==='work')work();else if(view==='done')done();
 }
 function home(){
- const p=PH[S.phase],n=S.history.length,day=DAYS[n%3];
+ const p=PH[S.phase],n=S.history.length,nd=nextDay(),rec=recommend().next,sd=S.sess?sessDay(S.sess):nd;
  let h=`<h1>Reg Park 5×5</h1><div class="mu">${p.n} · ${p.len}</div>`;
- h+=`<div class="card"><h2>${S.sess?'Workout in progress':'Next workout'}</h2><div style="font-size:20px;font-weight:700">${day}</div>
- <div class="mu" style="margin:4px 0 12px">${(S.sess?S.sess.ex:orderFor(S.phase,n)).map(k=>EX[k].n).join(' · ')}</div>`;
+ h+=`<div class="card"><h2>${S.sess?'Workout in progress':'Recommended next workout'}</h2><div style="font-size:20px;font-weight:700">${DAYS[sd]}</div>
+ ${S.sess?'':`<div style="color:var(--ac);font-weight:600;margin-top:2px">${recWhen(rec)}</div>`}
+ <div class="mu" style="margin:4px 0 12px">${(S.sess?S.sess.ex:orderFor(S.phase,nd)).map(k=>EX[k].n).join(' · ')}</div>`;
  if(S.sess){const c=Object.values(S.sess.res).flat().filter(Boolean).length,t=Object.values(S.sess.res).flat().length;
   h+=`<div class="bar"><i style="width:${c/t*100}%"></i></div><div class="mu">${c}/${t} sets · exercise ${S.sess.i+1} of ${S.sess.ex.length}</div>
   <div class="row" style="margin-top:12px"><button class="p" onclick="resume()">Resume</button><button class="bad" onclick="if(confirm('Discard this workout?')){S.sess=null;save();render()}">Discard</button></div>`;
- }else if(canStart())h+=`<button class="p big" onclick="start()">Start workout</button>`;
- else{const r=restInfo();h+=`<button class="p big" disabled>Start workout</button><div class="note">Rest day needed. You trained ${r.since==0?'today':'yesterday'}, so your next workout opens ${r.avail}. Tap a scheduled day on the calendar to preview it.</div>`}
+ }else{
+  h+=`<button class="p big" onclick="start(${nd})">Start ${DAYS[nd]}</button>`;
+  if(rec>isoOf(new Date()))h+=`<div class="note">A rest day is recommended before your next workout. You can still start any workout today.</div>`;
+  h+=`<div class="mu" style="margin:14px 0 6px;text-align:center">Or start a different workout</div>
+  <div class="row">${[0,1,2].filter(d=>d!==nd).map(d=>`<button onclick="start(${d})">${DAYS[d]}<div class="mu" style="font-size:12px">${EX[orderFor(S.phase,d)[0]].n} first</div></button>`).join('')}</div>`}
  h+=`</div><div class="row"><button onclick="view='setup';render()">Phase &amp; units</button></div>`;
  h+=calendar();
  h+=`<div class="card"><h2>History (${n} workouts)</h2>`;
  if(S.sess){const q=S.sess;
   h+=`<div class="hist"><b>${new Date(q.t0).toLocaleDateString()}</b> · ${PH[q.phase].n} <span class="pill" style="color:var(--ac);border-color:var(--ac)">In progress</span><div class="mu">${q.ex.map(k=>{const r=q.res[k],d=r.filter(Boolean).length;return `${EX[k].n} ${fmt(wt(k))}${S.unit} ${r.filter(x=>x=='ok').length}/${r.length}${d?'':' (not started)'}`}).join(' · ')}</div></div>`}
  h+=n?S.history.slice(-8).reverse().map(x=>`<div class="hist"><b>${x.date}</b> · ${x.phase}<div class="mu">${x.lines}</div></div>`).join(''):(S.sess?'':'<div class="mu">Nothing yet.</div>');
- h+=`</div><div class="card mu" style="font-size:13px"><b>Rules:</b> Complete all reps on every set → add ${S.unit==='kg'?'2.5 kg to upper / 5 kg to lower':'5 lb to upper / 10 lb to lower'} next time. Missed reps → repeat the weight (up to 3 attempts, then drop 10%). Move to the next phase once you stall on the current one. Train ${planTxt()} with a rest day between; optional Zone 2 cardio on Tuesday.</div>`;
+ h+=`</div><div class="card mu" style="font-size:13px"><b>Rules:</b> Complete all reps on every set → add ${S.unit==='kg'?'2.5 kg to upper / 5 kg to lower':'5 lb to upper / 10 lb to lower'} next time. Missed reps → repeat the weight (up to 3 attempts, then drop 10%). Move to the next phase once you stall on the current one. Aim for 3 workouts a week with a rest day between sessions; optional Zone 2 cardio on a rest day.</div>`;
  app.innerHTML=h;
 }
 const pad=n=>String(n).padStart(2,'0');
@@ -118,10 +140,9 @@ function calendar(){
  S.history.forEach(x=>{let k=x.iso;if(!k){const d=new Date(x.date);if(isNaN(d))return;k=isoOf(d)}(by[k]=by[k]||[]).push(x)});
  const y=calM.getFullYear(),m=calM.getMonth(),days=new Date(y,m+1,0).getDate(),off=(calM.getDay()+6)%7,today=isoOf(new Date());
  const ipK=S.sess?isoOf(new Date(S.sess.t0)):null;
- // Projected workouts: upcoming Mon/Wed/Fri, cycling squat → bench → deadlift focus from your next workout.
- const sched={};SCHEDN={};{let idx=S.history.length+(S.sess?1:0);const b0=new Date();b0.setHours(0,0,0,0);
-  for(let i=0;i<180;i++){const d=new Date(b0);d.setDate(b0.getDate()+i);const wd=d.getDay();if(!planDays().includes(wd))continue;
-   const kk=isoOf(d);if(by[kk]||kk===ipK)continue;sched[kk]=DAYS[idx%3];SCHEDN[kk]=idx;idx++}}
+ // Recommended days: spaced by your recent pattern, cycling squat → bench → deadlift from your next workout.
+ const sched={};SCHEDN={};{let day=S.sess?(sessDay(S.sess)+1)%3:nextDay();
+  recommend().list.forEach(kk=>{if(by[kk]||kk===ipK)return;sched[kk]=DAYS[day];SCHEDN[kk]=day;day=(day+1)%3})}
  let cnt=0;for(let d=1;d<=days;d++)if(by[y+'-'+pad(m+1)+'-'+pad(d)])cnt++;
  const ipHere=ipK&&ipK.startsWith(y+'-'+pad(m+1));
  let h=`<div class="card"><div class="row sp" style="flex:none;margin-bottom:8px"><button style="flex:none;padding:6px 14px" onclick="calMove(-1)" aria-label="Previous month">‹</button><div style="text-align:center;flex:2"><b>${calM.toLocaleString(undefined,{month:'long',year:'numeric'})}</b><div class="mu" style="font-size:13px">${cnt} workout day${cnt==1?'':'s'}${ipHere?' · 1 in progress':''}</div></div><button style="flex:none;padding:6px 14px" onclick="calMove(1)" aria-label="Next month">›</button></div>
@@ -130,9 +151,9 @@ function calendar(){
  for(let d=1;d<=days;d++){const k=y+'-'+pad(m+1)+'-'+pad(d),w=by[k],sel=calSel===k;
   h+=`<div onclick="calSel=calSel==='${k}'?null:'${k}';render()" style="cursor:pointer;aspect-ratio:1;display:grid;place-items:center;border-radius:50%;font-size:14px;${w?'background:var(--ac);color:#fff;font-weight:700;':k===ipK?'background:rgba(255,106,43,.25);color:var(--ac);font-weight:700;':sched[k]?'color:var(--ac);':''}${k===ipK&&!w?'border:2px dashed var(--ac);'+(k===today?'box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--tx);':''):sched[k]&&!w?'border:2px dotted var(--ac);'+(k===today?'box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--tx);':''):k===today?'border:2px solid var(--tx);':'border:2px solid transparent;'}${sel?'outline:2px solid var(--ac);outline-offset:2px;':''}">${d}</div>`}
  h+='</div>';
- h+=`<div class="mu" style="font-size:12px;margin-top:8px">Solid = done${S.sess?' · Dashed = in progress':''} · Dotted = scheduled (${planTxt()})</div>`;
+ h+=`<div class="mu" style="font-size:12px;margin-top:8px">Solid = done${S.sess?' · Dashed = in progress':''} · Dotted = recommended</div>`;
  if(calSel){const w=by[calSel],ip=calSel===ipK?S.sess:null;
-  const sc=sched[calSel]&&!w&&!ip?`<div class="mu"><b style="color:var(--ac)">Scheduled</b> · ${sched[calSel]}<br>${orderFor(S.phase,SCHEDN[calSel]).map((k,i)=>(i+1)+'. '+EX[k].n).join('<br>')}<button style="width:100%;margin-top:10px" onclick="openPreview('${calSel}')">Preview workout</button></div>`:'';
+  const sc=sched[calSel]&&!w&&!ip?`<div class="mu"><b style="color:var(--ac)">Recommended</b> · ${sched[calSel]}<br>${orderFor(S.phase,SCHEDN[calSel]).map((k,i)=>(i+1)+'. '+EX[k].n).join('<br>')}<button style="width:100%;margin-top:10px" onclick="openPreview('${calSel}')">Preview workout</button></div>`:'';
   const ipTxt=ip?`<div class="mu"><b style="color:var(--ac)">In progress</b> · ${PH[ip.phase].n}<br>${ip.ex.map(k=>{const r=ip.res[k],d=r.filter(Boolean).length;return `${EX[k].n} ${d}/${r.length} sets${d&&d<r.length?' (incomplete)':d?'':' (not started)'}`}).join('<br>')}</div>`:'';
   h+=`<div class="hist" style="margin-top:10px"><b>${calSel}</b>${ipTxt}${sc}${w?w.map(x=>`<div class="mu">${x.phase}<br>${x.lines}</div>`).join(''):ip||sc?'':'<div class="mu">Rest day</div>'}</div>`}
  return h+'</div>';
@@ -140,10 +161,6 @@ function calendar(){
 function setup(){
  let h=`<h1>Phase &amp; units</h1><div class="card"><label>Phase</label><select onchange="S.phase=+this.value;save();render()">${PH.map((x,i)=>`<option value="${i}" ${i==S.phase?'selected':''}>${x.n}</option>`).join('')}</select>
  <label>Unit</label><select onchange="S.unit=this.value;save();render()"><option ${S.unit=='kg'?'selected':''}>kg</option><option ${S.unit=='lb'?'selected':''}>lb</option></select></div>
- <div class="card"><h2>First workout day</h2><div class="mu" style="margin-bottom:8px">Pick the day your week starts. The other two workouts are set automatically with a rest day between each. This only changes planned days on the calendar; past workouts stay as logged.</div>
- <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${[1,2,3,4,5,6,0].map(d=>{const on=startDay()===d,auto=!on&&planDays().includes(d);return `<button onclick="setStartDay(${d})" aria-pressed="${on}" title="${on?'First day':auto?'Set automatically':''}" style="padding:10px 0;${on?'background:var(--ac);border-color:var(--ac);color:#fff;font-weight:700':auto?'background:rgba(255,106,43,.2);border-color:var(--ac);color:var(--ac);font-weight:700':''}">${WD[d]}</button>`}).join('')}</div>
- <div class="mu" style="font-size:12px;text-align:center;margin-top:8px">Solid = your first day · Tinted = set automatically</div>
- <div style="margin-top:10px;text-align:center"><span class="mu">Your days:</span> <b>${planTxt()}</b></div></div>
  <div class="card mu" style="font-size:14px">Working weights are automatic: each lift continues from your last workout and adds weight after a clean 5×5. To change a weight for the current workout, tap the weight at the top of the exercise.</div>
  <button class="p big" onclick="save();view='home';render()">Done</button>`;
  app.innerHTML=h;
@@ -153,15 +170,6 @@ function setup(){
 const MAIN=['squat','bench','dead'];
 function orderFor(phase,n){const r=n%3,main=MAIN.slice(r).concat(MAIN.slice(0,r));
  return main.concat(PH[phase].ex.filter(k=>!MAIN.includes(k)))}
-// Rest rule: at least one full rest day between sessions. Blocks Start if your last workout was today or yesterday.
-function restInfo(){
- let last=null;
- S.history.forEach(x=>{let k=x.iso;if(!k){const d=new Date(x.date);if(isNaN(d))return;k=isoOf(d)}if(!last||k>last)last=k});
- if(!last)return {ok:true};
- const [y,m,d]=last.split('-').map(Number),ld=new Date(y,m-1,d),t=new Date();t.setHours(0,0,0,0);
- const since=Math.round((t-ld)/864e5),av=new Date(y,m-1,d+2);
- return {ok:since>=2,since,avail:av.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'})}}
-const canStart=()=>restInfo().ok;
 // Read-only preview of a scheduled workout (current weights; they may change after your next workout).
 let previewN=0,previewDate='';
 function openPreview(k){previewN=SCHEDN[k];previewDate=k;view='preview';render();window.scrollTo(0,0)}
@@ -181,11 +189,10 @@ function preview(){
  app.innerHTML=h;
 }
 let SCHEDN={};
-function start(){
- if(!canStart())return;
- const p=PH[S.phase];
- const ex=orderFor(S.phase,S.history.length);
- S.sess={ex,i:0,res:Object.fromEntries(ex.map(k=>[k,Array(EX[k].s).fill(null)])),t0:Date.now(),phase:S.phase};
+function start(day){
+ const d=Number.isInteger(day)?day:nextDay();
+ const ex=orderFor(S.phase,d);
+ S.sess={ex,day:d,i:0,res:Object.fromEntries(ex.map(k=>[k,Array(EX[k].s).fill(null)])),t0:Date.now(),phase:S.phase};
  save();resume();
 }
 function resume(){view='work';render()}
@@ -327,7 +334,7 @@ function finish(){
    if(S.fails[k]>=3){S.weights[k]=Math.max(0,round(w*.9));S.fails[k]=0;summary.push(`${EX[k].n}: 3 failed attempts → drop 10% to ${fmt(S.weights[k])} ${S.unit} and rebuild`)}
    else summary.push(`${EX[k].n}: missed reps → repeat ${fmt(w)} ${S.unit} (attempt ${S.fails[k]} of 3)`)}
  });
- S.history.push({iso:isoOf(new Date()),date:new Date().toLocaleDateString(),phase:PH[s.phase].n,lines:lines.join(' · ')});
+ S.history.push({iso:isoOf(new Date()),day:sessDay(s),date:new Date().toLocaleDateString(),phase:PH[s.phase].n,lines:lines.join(' · ')});
  S.sess=null;save();view='done';render();
 }
 function done(){

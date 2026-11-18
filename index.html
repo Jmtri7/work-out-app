@@ -67,24 +67,27 @@ const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 // (clamped to 2–3 days so there is always a rest day between sessions and about 3 workouts a week).
 const sessDay=s=>Number.isInteger(s.day)?s.day:S.history.length%3;
 const dayOfHist=(x,i)=>Number.isInteger(x.day)?x.day:i%3;
-function nextDay(){const n=S.history.length;return n?(dayOfHist(S.history[n-1],n-1)+1)%3:0}
 const parseIso=k=>{const [y,m,d]=k.split('-').map(Number);return new Date(y,m-1,d)};
 const addDays=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);
-function histDates(){
- const a=[];S.history.forEach(x=>{let k=x.iso;if(!k){const d=new Date(x.date);if(isNaN(d))return;k=isoOf(d)}a.push(k)});
- if(S.sess)a.push(isoOf(new Date(S.sess.t0)));
- return [...new Set(a)].sort()}
-function dayGap(){
- const ds=histDates().slice(-7),g=[];
- for(let i=1;i<ds.length;i++){const n=Math.round((parseIso(ds[i])-parseIso(ds[i-1]))/864e5);if(n>=1)g.push(n)}
- if(!g.length)return 2;
- g.sort((a,b)=>a-b);const med=g.length%2?g[(g.length-1)/2]:(g[g.length/2-1]+g[g.length/2])/2;
- return Math.min(3,Math.max(2,Math.round(med)))}
+// Weekly pattern: A, rest, B, rest, C, rest, rest  (A = squat day, B = bench day, C = deadlift day).
+// So the next workout comes GAP[type of last workout] days after it: A→B 2 days, B→C 2 days, C→A 3 days.
+const GAP=[2,2,3];
+function lastWorkout(){   // most recent workout (one in progress counts)
+ let best=null;
+ S.history.forEach((x,i)=>{let k=x.iso;if(!k){const d=new Date(x.date);if(isNaN(d))return;k=isoOf(d)}if(!best||k>=best.iso)best={iso:k,day:dayOfHist(x,i)}});
+ if(S.sess){const k=isoOf(new Date(S.sess.t0));if(!best||k>=best.iso)best={iso:k,day:sessDay(S.sess)}}
+ return best}
+// Recommended upcoming workouts as [{iso, day}]. Late → do it today. Away 7+ days → start over with A today.
 function recommend(){
- const gap=dayGap(),ds=histDates(),t=new Date();t.setHours(0,0,0,0);
- let d=ds.length?addDays(parseIso(ds[ds.length-1]),gap):t;if(d<t)d=t;
- const list=[];while(list.length<90&&(d-t)/864e5<180){list.push(isoOf(d));d=addDays(d,gap)}
- return {gap,list,next:list[0]}}
+ const t=new Date();t.setHours(0,0,0,0);const last=lastWorkout();
+ let day,d;
+ if(!last){day=0;d=t}
+ else{const ld=parseIso(last.iso);
+  if(Math.round((t-ld)/864e5)>=7){day=0;d=t}
+  else{day=(last.day+1)%3;d=addDays(ld,GAP[last.day]);if(d<t)d=t}}
+ const list=[];while(list.length<90&&(d-t)/864e5<180){list.push({iso:isoOf(d),day});d=addDays(d,GAP[day]);day=(day+1)%3}
+ return {list,next:list[0]}}
+const nextDay=()=>recommend().next.day;
 function recWhen(k){
  const t=isoOf(new Date());if(k<=t)return 'Recommended: today';
  if(k===isoOf(addDays(new Date(),1)))return 'Recommended: tomorrow';
@@ -109,7 +112,7 @@ function render(){
  if(view==='home')home();else if(view==='preview')preview();else if(view==='setup')setup();else if(view==='work')work();else if(view==='done')done();
 }
 function home(){
- const p=PH[S.phase],n=S.history.length,nd=nextDay(),rec=recommend().next,sd=S.sess?sessDay(S.sess):nd;
+ const p=PH[S.phase],n=S.history.length,R=recommend().next,nd=R.day,rec=R.iso,sd=S.sess?sessDay(S.sess):nd;
  let h=`<h1>Reg Park 5×5</h1><div class="mu">${p.n} · ${p.len}</div>`;
  h+=`<div class="card"><h2>${S.sess?'Workout in progress':'Recommended next workout'}</h2><div style="font-size:20px;font-weight:700">${DAYS[sd]}</div>
  ${S.sess?'':`<div style="color:var(--ac);font-weight:600;margin-top:2px">${recWhen(rec)}</div>`}
@@ -140,9 +143,9 @@ function calendar(){
  S.history.forEach(x=>{let k=x.iso;if(!k){const d=new Date(x.date);if(isNaN(d))return;k=isoOf(d)}(by[k]=by[k]||[]).push(x)});
  const y=calM.getFullYear(),m=calM.getMonth(),days=new Date(y,m+1,0).getDate(),off=(calM.getDay()+6)%7,today=isoOf(new Date());
  const ipK=S.sess?isoOf(new Date(S.sess.t0)):null;
- // Recommended days: spaced by your recent pattern, cycling squat → bench → deadlift from your next workout.
- const sched={};SCHEDN={};{let day=S.sess?(sessDay(S.sess)+1)%3:nextDay();
-  recommend().list.forEach(kk=>{if(by[kk]||kk===ipK)return;sched[kk]=DAYS[day];SCHEDN[kk]=day;day=(day+1)%3})}
+ // Recommended days follow the A, rest, B, rest, C, rest, rest pattern from your last workout.
+ const sched={};SCHEDN={};
+ recommend().list.forEach(it=>{const kk=it.iso;if(by[kk]||kk===ipK)return;sched[kk]=DAYS[it.day];SCHEDN[kk]=it.day})
  let cnt=0;for(let d=1;d<=days;d++)if(by[y+'-'+pad(m+1)+'-'+pad(d)])cnt++;
  const ipHere=ipK&&ipK.startsWith(y+'-'+pad(m+1));
  let h=`<div class="card"><div class="row sp" style="flex:none;margin-bottom:8px"><button style="flex:none;padding:6px 14px" onclick="calMove(-1)" aria-label="Previous month">‹</button><div style="text-align:center;flex:2"><b>${calM.toLocaleString(undefined,{month:'long',year:'numeric'})}</b><div class="mu" style="font-size:13px">${cnt} workout day${cnt==1?'':'s'}${ipHere?' · 1 in progress':''}</div></div><button style="flex:none;padding:6px 14px" onclick="calMove(1)" aria-label="Next month">›</button></div>

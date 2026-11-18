@@ -69,7 +69,7 @@ const sessDay=s=>Number.isInteger(s.day)?s.day:S.history.length%3;
 const dayOfHist=(x,i)=>Number.isInteger(x.day)?x.day:i%3;
 const parseIso=k=>{const [y,m,d]=k.split('-').map(Number);return new Date(y,m-1,d)};
 const addDays=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);
-const VERSION='1.0.0',VERSION_DATE='2026-11-18';
+const VERSION='1.0.1',VERSION_DATE='2026-11-18';
 // Spacing: one rest day between workouts (next one 2 days later). The second rest day (next one 3 days later)
 // comes after the 3rd workout of a run, whichever workout that is: WORK, rest, WORK, rest, WORK, rest, rest.
 // A "run" is workouts spaced 2 days or less apart; skipping days breaks the run and starts it over.
@@ -176,6 +176,8 @@ function setup(){
  let h=`<h1>Phase &amp; units</h1><div class="card"><label>Phase</label><select onchange="S.phase=+this.value;save();render()">${PH.map((x,i)=>`<option value="${i}" ${i==S.phase?'selected':''}>${x.n}</option>`).join('')}</select>
  <label>Unit</label><select onchange="S.unit=this.value;save();render()"><option ${S.unit=='kg'?'selected':''}>kg</option><option ${S.unit=='lb'?'selected':''}>lb</option></select></div>
  <div class="card mu" style="font-size:14px">Working weights are automatic: each lift continues from your last workout and adds weight after a clean 5×5. To change a weight for the current workout, tap the weight at the top of the exercise.</div>
+ <div class="card"><h2>Rest-timer chime</h2><button class="big" onclick="beep()">Play test chime</button>
+ <div class="mu" style="font-size:13px;margin-top:8px">Tap this once to enable sound. If you hear nothing on iPhone, check the ringer switch and volume. The chime only plays while the app is open on screen; if your phone is locked it plays when you come back.</div></div>
  <button class="p big" onclick="save();view='home';render()">Done</button>
  <div class="mu" style="text-align:center;font-size:12px;margin:12px 0">Version ${VERSION} · ${VERSION_DATE}</div>`;
  app.innerHTML=h;
@@ -321,16 +323,22 @@ function updateRest(){
 setInterval(updateRest,500);
 // One shared AudioContext, unlocked by your first tap (browsers block sound until then).
 let AC=null;
-function audioCtx(){try{if(!AC)AC=new(window.AudioContext||window.webkitAudioContext)();if(AC.state==='suspended')AC.resume();}catch(e){}return AC}
-['pointerdown','keydown'].forEach(ev=>document.addEventListener(ev,audioCtx,{passive:true}));
+// iOS Safari only unlocks audio inside touchend/click, and it can leave the context "suspended" or "interrupted"
+// (e.g. after the screen locks), so resume whenever it isn't running and play a silent buffer to unlock it.
+function audioCtx(){try{if(!AC||AC.state==='closed')AC=new(window.AudioContext||window.webkitAudioContext)();if(AC.state!=='running')AC.resume();}catch(e){}return AC}
+function unlockAudio(){const a=audioCtx();if(!a)return;try{const s=a.createBufferSource();s.buffer=a.createBuffer(1,1,22050);s.connect(a.destination);s.start(0)}catch(e){}}
+['touchend','click','pointerup','keydown'].forEach(ev=>document.addEventListener(ev,unlockAudio,{passive:true}));
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)audioCtx()});
 // Bell: a few inharmonic partials with a quick strike and a long exponential ring-out. Plays once.
 function bell(){
- const a=audioCtx();if(!a)return;const t=a.currentTime,f0=587;
- const master=a.createGain();master.gain.value=.5;master.connect(a.destination);
- [[1,1,2.6],[2.76,.6,1.8],[5.4,.35,1.1],[8.93,.2,.6]].forEach(([r,v,d])=>{
-  const o=a.createOscillator(),g=a.createGain();o.type='sine';o.frequency.value=f0*r;
-  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+.005);g.gain.exponentialRampToValueAtTime(.0001,t+d);
-  o.connect(g);g.connect(master);o.start(t);o.stop(t+d+.05)})}
+ const a=audioCtx();if(!a)return;
+ const play=()=>{const t=a.currentTime,f0=587;
+  const master=a.createGain();master.gain.value=.6;master.connect(a.destination);
+  [[1,1,2.6],[2.76,.6,1.8],[5.4,.35,1.1],[8.93,.2,.6]].forEach(([r,v,d])=>{
+   const o=a.createOscillator(),g=a.createGain();o.type='sine';o.frequency.value=f0*r;
+   g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+.005);g.gain.exponentialRampToValueAtTime(.0001,t+d);
+   o.connect(g);g.connect(master);o.start(t);o.stop(t+d+.05)})};
+ if(a.state==='running')play();else a.resume().then(play).catch(()=>{})}
 function beep(){
  try{navigator.vibrate&&navigator.vibrate([200,100,200])}catch(e){}
  try{bell()}catch(e){}

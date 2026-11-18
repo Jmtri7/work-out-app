@@ -69,9 +69,20 @@ const sessDay=s=>Number.isInteger(s.day)?s.day:S.history.length%3;
 const dayOfHist=(x,i)=>Number.isInteger(x.day)?x.day:i%3;
 const parseIso=k=>{const [y,m,d]=k.split('-').map(Number);return new Date(y,m-1,d)};
 const addDays=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);
-// Weekly pattern: A, rest, B, rest, C, rest, rest  (A = squat day, B = bench day, C = deadlift day).
-// So the next workout comes GAP[type of last workout] days after it: A→B 2 days, B→C 2 days, C→A 3 days.
-const GAP=[2,2,3];
+const VERSION='1.0.0',VERSION_DATE='2026-11-18';
+// Spacing: one rest day between workouts (next one 2 days later). The second rest day (next one 3 days later)
+// comes after the 3rd workout of a run, whichever workout that is: WORK, rest, WORK, rest, WORK, rest, rest.
+// A "run" is workouts spaced 2 days or less apart; skipping days breaks the run and starts it over.
+// The workout TYPE (A = squat day, B = bench day, C = deadlift day) just cycles A → B → C and doesn't affect spacing.
+function workoutDates(){
+ const a=[];S.history.forEach(x=>{let k=x.iso;if(!k){const d=new Date(x.date);if(isNaN(d))return;k=isoOf(d)}a.push(k)});
+ if(S.sess)a.push(isoOf(new Date(S.sess.t0)));
+ return a}
+function gapAfter(isos,k){   // days until the next workout after the one on date k
+ const ds=[...new Set(isos)].filter(x=>x<=k).sort().reverse();   // newest first, starting at k
+ let n=1,cur=parseIso(k);
+ for(const x of ds.slice(1)){const d=parseIso(x);if(Math.round((cur-d)/864e5)<=2){n++;cur=d}else break}
+ return n>=3?3:2}
 function lastWorkout(){   // most recent workout (one in progress counts)
  let best=null;
  S.history.forEach((x,i)=>{let k=x.iso;if(!k){const d=new Date(x.date);if(isNaN(d))return;k=isoOf(d)}if(!best||k>=best.iso)best={iso:k,day:dayOfHist(x,i)}});
@@ -83,8 +94,9 @@ function recommend(){
  const t=new Date();t.setHours(0,0,0,0);const last=lastWorkout();
  let day,d;
  if(!last){day=0;d=t}
- else{day=(last.day+1)%3;d=addDays(parseIso(last.iso),GAP[last.day]);if(d<t)d=t}
- const list=[];while(list.length<90&&(d-t)/864e5<180){list.push({iso:isoOf(d),day});d=addDays(d,GAP[day]);day=(day+1)%3}
+ const sim=workoutDates();
+ if(last){day=(last.day+1)%3;d=addDays(parseIso(last.iso),gapAfter(sim,last.iso));if(d<t)d=t}
+ const list=[];while(list.length<90&&(d-t)/864e5<180){const k=isoOf(d);list.push({iso:k,day});sim.push(k);d=addDays(d,gapAfter(sim,k));day=(day+1)%3}
  return {list,next:list[0]}}
 const nextDay=()=>recommend().next.day;
 function recWhen(k){
@@ -130,7 +142,7 @@ function home(){
  if(S.sess){const q=S.sess;
   h+=`<div class="hist"><b>${new Date(q.t0).toLocaleDateString()}</b> · ${PH[q.phase].n} <span class="pill" style="color:var(--ac);border-color:var(--ac)">In progress</span><div class="mu">${q.ex.map(k=>{const r=q.res[k],d=r.filter(Boolean).length;return `${EX[k].n} ${fmt(wt(k))}${S.unit} ${r.filter(x=>x=='ok').length}/${r.length}${d?'':' (not started)'}`}).join(' · ')}</div></div>`}
  h+=n?S.history.slice(-8).reverse().map(x=>`<div class="hist"><b>${x.date}</b> · ${x.phase}<div class="mu">${x.lines}</div></div>`).join(''):(S.sess?'':'<div class="mu">Nothing yet.</div>');
- h+=`</div><div class="card mu" style="font-size:13px"><b>Rules:</b> Complete all reps on every set → add ${S.unit==='kg'?'2.5 kg to upper / 5 kg to lower':'5 lb to upper / 10 lb to lower'} next time. Missed reps → repeat the weight (up to 3 attempts, then drop 10%). Move to the next phase once you stall on the current one. Aim for 3 workouts a week with a rest day between sessions; optional Zone 2 cardio on a rest day.</div>`;
+ h+=`</div><div class="card mu" style="font-size:13px"><b>Rules:</b> Complete all reps on every set → add ${S.unit==='kg'?'2.5 kg to upper / 5 kg to lower':'5 lb to upper / 10 lb to lower'} next time. Missed reps → repeat the weight (up to 3 attempts, then drop 10%). Move to the next phase once you stall on the current one. Aim for 3 workouts a week with a rest day between sessions; optional Zone 2 cardio on a rest day.</div><div class="mu" style="text-align:center;font-size:12px;margin:8px 0">Reg Park 5×5 · v${VERSION} · ${VERSION_DATE}</div>`;
  app.innerHTML=h;
 }
 const pad=n=>String(n).padStart(2,'0');
@@ -164,7 +176,8 @@ function setup(){
  let h=`<h1>Phase &amp; units</h1><div class="card"><label>Phase</label><select onchange="S.phase=+this.value;save();render()">${PH.map((x,i)=>`<option value="${i}" ${i==S.phase?'selected':''}>${x.n}</option>`).join('')}</select>
  <label>Unit</label><select onchange="S.unit=this.value;save();render()"><option ${S.unit=='kg'?'selected':''}>kg</option><option ${S.unit=='lb'?'selected':''}>lb</option></select></div>
  <div class="card mu" style="font-size:14px">Working weights are automatic: each lift continues from your last workout and adds weight after a clean 5×5. To change a weight for the current workout, tap the weight at the top of the exercise.</div>
- <button class="p big" onclick="save();view='home';render()">Done</button>`;
+ <button class="p big" onclick="save();view='home';render()">Done</button>
+ <div class="mu" style="text-align:center;font-size:12px;margin:12px 0">Version ${VERSION} · ${VERSION_DATE}</div>`;
  app.innerHTML=h;
 }
 // The three main lifts rotate so each day's priority lift goes first (squat → bench → deadlift days).

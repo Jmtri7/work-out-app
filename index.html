@@ -69,7 +69,7 @@ const sessDay=s=>Number.isInteger(s.day)?s.day:S.history.length%3;
 const dayOfHist=(x,i)=>Number.isInteger(x.day)?x.day:i%3;
 const parseIso=k=>{const [y,m,d]=k.split('-').map(Number);return new Date(y,m-1,d)};
 const addDays=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);
-const VERSION='1.0.1',VERSION_DATE='2026-11-18';
+const VERSION='1.0.2',VERSION_DATE='2026-11-18';
 // Spacing: one rest day between workouts (next one 2 days later). The second rest day (next one 3 days later)
 // comes after the 3rd workout of a run, whichever workout that is: WORK, rest, WORK, rest, WORK, rest, rest.
 // A "run" is workouts spaced 2 days or less apart; skipping days breaks the run and starts it over.
@@ -219,12 +219,13 @@ function work(){
  let h=`<div class="row sp" style="flex:none"><button onclick="view='home';render()" style="flex:none">‹ Home</button><span class="mu" style="text-align:right">Exercise ${s.i+1}/${s.ex.length}</span></div>
  <div class="bar"><i style="width:${c/total*100}%"></i></div>
  <div class="card"><h1 style="text-align:center">${e.n}</h1>${(S.last||{})[k]?`<div class="mu" style="text-align:center;font-size:13px">Last trained: ${PH[S.last[k].phase].n.split(':')[0]} · ${fmt(S.last[k].w)} ${S.unit} · ${S.last[k].sets} sets · ${S.last[k].iso}</div>`:`<div class="mu" style="text-align:center;font-size:13px">Not trained yet</div>`}
- <div class="w"><input type="number" inputmode="decimal" step="${step()}" value="${wt(k)}" aria-label="Working weight" style="width:170px;font-size:44px;font-weight:800;text-align:center;padding:4px" onchange="S.weights['${k}']=snapW('${k}',+this.value||0);save();render()"><small> ${S.unit}</small></div>
- <div class="mu" style="text-align:center;margin-top:-4px">Tap the weight to edit</div>${plateView(k)}
 `;
  h+=`<div class="mu" style="text-align:center;margin:12px 0">${e.s} × ${e.r}${e.tempo?' · tempo '+e.tempo:''} · rest ${e.rest>=150&&e.rest<180?'2–3 min':e.rest>=120?e.rest/60+' min':e.rest+' s'}${e.cue?'<br>'+e.cue:''}</div>`;
  if(e.wu&&!r.some(Boolean)){const bar=PLATES[S.unit].bar,w5=Math.max(bar,round(wt(k)*.5)),w7=Math.max(bar,round(wt(k)*.7));
   h+=`<div class="note"><b>Warm-up (not counted)</b><br>Set 1 · 5 × ${fmt(w5)} ${S.unit} (50%)${plateView(k,w5,true)}Set 2 · 5 × ${fmt(w7)} ${S.unit} (70%)${plateView(k,w7,true)}</div>`}
+ h+=`<h2 style="text-align:center;margin:16px 0 0">Working weight</h2>
+ <div class="w"><input type="number" inputmode="decimal" step="${step()}" value="${wt(k)}" aria-label="Working weight" style="width:170px;font-size:44px;font-weight:800;text-align:center;padding:4px" onchange="S.weights['${k}']=snapW('${k}',+this.value||0);save();render()"><small> ${S.unit}</small></div>
+ <div class="mu" style="text-align:center;margin-top:-4px">Tap the weight to edit</div>${plateView(k)}`;
  h+=`<div class="sets">${r.map((x,i)=>{const m=x&&x!='ok';return `<div class="dot ${x=='ok'?'ok':m?'miss':i==cur?'cur':''} ${editSet===i?'edit':''}" onclick="editSet=editSet===${i}?null:${i};pendingMiss=null;render()" title="${m?'Got '+x.split(':')[1]+' reps — tap to edit':'Tap to edit'}">${x=='ok'?'✓':m?x.split(':')[1]:i+1}</div>`}).join('')}</div>`;
  if(editSet!==null){const v=r[editSet];
   h+=`<div class="note" style="margin-top:12px;text-align:center"><b>Editing set ${editSet+1}</b> <span class="mu">(${v==null?'not done yet':v=='ok'?'all reps':v.split(':')[1]+' reps'})</span>
